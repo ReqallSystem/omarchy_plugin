@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "reqall.memory",
+  "name": "Reqall",
+  "version": "0.1.0",
+  "author": "Reqall",
+  "license": "MIT",
+  "description": "Your Reqall memory at a glance: recent records, open work, and account status in a native Omarchy bar panel.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Reqall",
+    "description": "One bar icon and one panel: recent memories, open todos and issues, project count, and sign-in when you need it.",
+    "category": "AI",
+    "aliases": ["reqall", "memory"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "barIcon": "brain",
+      "apiKey": "",
+      "serverUrl": "",
+      "project": "",
+      "recentCount": 6,
+      "refreshIntervalSec": 300
+    },
+    "schema": [
+      { "key": "barIcon", "type": "enum", "label": "Bar icon", "options": ["brain", "head-cog", "emoji"], "defaultValue": "brain", "description": "brain and head-cog are monochrome Nerd Font glyphs; emoji is the colour 🧠." },
+      { "key": "apiKey", "type": "string", "label": "API key", "defaultValue": "", "description": "Optional. A Reqall API key (rq_...). When empty the widget uses REQALL_API_KEY, ~/.config/reqall/env, or the reqall CLI's stored login." },
+      { "key": "serverUrl", "type": "string", "label": "Server URL", "defaultValue": "", "description": "Optional. Defaults to REQALL_URL or https://www.reqall.net." },
+      { "key": "project", "type": "string", "label": "Project filter", "defaultValue": "", "description": "Optional org/repo. When set, recent memories and counts are limited to that project." },
+      { "key": "recentCount", "type": "integer", "label": "Recent memories shown", "min": 3, "max": 15, "step": 1, "defaultValue": 6 },
+      { "key": "refreshIntervalSec", "type": "integer", "label": "Refresh interval (seconds)", "min": 60, "max": 3600, "step": 30, "defaultValue": 300 }
+    ]
+  }
+}
