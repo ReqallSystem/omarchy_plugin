@@ -55,6 +55,7 @@ Panel {
     var list = []
     if (reqall.auth === "ok") {
       list.push({ id: "open", label: "Open Reqall", icon: "\u{F059F}" })       // nf-md-web
+      list.push({ id: "add", label: "Quick add", icon: "\u{F0415}" })          // nf-md-plus
       list.push({ id: "refresh", label: "Refresh", icon: "\u{F0450}" })        // nf-md-refresh
     } else if (reqall.auth === "loading") {
       list.push({ id: "refresh", label: "Refresh", icon: "\u{F0450}" })
@@ -80,6 +81,7 @@ Panel {
   function runAction(id) {
     switch (id) {
     case "open": openUrl(reqall.url + "/dashboard"); break
+    case "add": openUrl(reqall.url + "/app"); break
     case "signin": openUrl(reqall.url + "/auth/login"); break
     case "apikey": openUrl(reqall.url + "/dashboard#keys"); break
     case "cli":
@@ -255,6 +257,7 @@ Panel {
       onTextKey: function(t) {
         if (t === "r" || t === "R") reqall.refresh()
         else if (t === "o" || t === "O") root.openUrl(reqall.url + "/dashboard")
+        else if ((t === "a" || t === "A") && root.signedIn) root.openUrl(reqall.url + "/app")
       }
 
       Flickable {
