@@ -87,11 +87,12 @@ The panel refreshes on its own once a key is available. To update, run
 - **Hero**: the Reqall mark, sign-in state, server, and total memory count.
 - **Usage**: memories, open todos, open issues, and projects.
 - **Recent memories**: the latest records with kind, project, status, and age.
-- **Actions**: open the dashboard, refresh, or sign in.
+- **Actions**: open the dashboard, quick-add a memory (the `/app` entry
+  form), refresh, or sign in.
 
 Keyboard: `j`/`k` move, `h`/`l` switch buttons, `Enter` activates, `r`
-refreshes, `o` opens the dashboard, `Esc` closes, `Tab` moves to the next
-panel. Middle-click the bar icon to refresh, right-click to open the dashboard.
+refreshes, `o` opens the dashboard, `a` opens quick add, `Esc` closes, `Tab`
+moves to the next panel. Middle-click the bar icon to refresh, right-click to open the dashboard.
 
 ## Settings
 
@@ -102,7 +103,7 @@ Set with `omarchy bar set reqall.memory <key> <value>` or in the bar settings pa
 | `barIcon`            | `brain` | `brain` or `head-cog` (monochrome glyphs), or `emoji` for 🧠 |
 | `apiKey`             | empty   | Reqall API key; overrides every other source         |
 | `serverUrl`          | empty   | Reqall server; defaults to `REQALL_URL` or reqall.net |
-| `project`            | empty   | `org/repo` filter for recent memories and counts     |
+| `project`            | empty   | Exact Reqall project filter, e.g. `acme/notes` or `.machine/host/user`; empty means account-wide. No directory-derived name. |
 | `recentCount`        | 6       | Recent memories shown (3 to 15)                      |
 | `refreshIntervalSec` | 300     | Background refresh interval                          |
 
