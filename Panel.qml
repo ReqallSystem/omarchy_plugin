@@ -175,19 +175,35 @@ Panel {
   readonly property var pickerRows: Model.rankProjects(reqall.projects, projectQuery, currentProject, reqall.usedProjects, 6)
   readonly property bool canRemember: signedIn && !!formProject && titleField.text.trim() !== "" && !reqall.saving
 
-  // The current filter project if there is one, else the last one used.
-  function preselectProject() {
-    if (formProject || reqall.projects.length === 0) return
+  // Keeps the selection in step with each loaded project list: it follows a
+  // rename, drops a project that is gone (deleted, or another account's after
+  // a credential change), and otherwise preselects the current filter
+  // project, else the last one used. A failed load keeps the selection.
+  function reconcileProject() {
+    var doc = reqall.projectsDoc
+    if (!doc) { if (formProject) setFormProject(null); return }
+    if (doc.auth !== "ok") return
+    if (formProject) {
+      var match = Model.findProjectById(reqall.projects, formProject.id)
+      if (match && match.name === formProject.name) return
+      setFormProject(match)
+      if (match) return
+    }
     var pick = Model.findProject(reqall.projects, currentProject)
     for (var i = 0; !pick && i < reqall.usedProjects.length; i++)
       pick = Model.findProject(reqall.projects, reqall.usedProjects[i])
     if (pick) setFormProject(pick)
   }
 
+  // The list usually lands a moment after the panel opens, with the project
+  // field already focused: a query being typed is left alone, and a name
+  // filled in under the cursor is selected so the next keystroke replaces it.
   function setFormProject(project) {
     formProject = project ? { id: project.id, name: project.name } : null
+    if (projectField.activeFocus && projectQuery !== "") return
     projectQuery = ""
     projectField.text = formProject ? formProject.name : ""
+    if (projectField.activeFocus) projectField.selectAll()
   }
 
   function focusForm() {
@@ -255,8 +271,9 @@ Panel {
         root.formStatus = result.message || "Could not save"
       }
     }
-    function onProjectsDocChanged() { root.preselectProject() }
+    function onProjectsDocChanged() { root.reconcileProject() }
     function onSignedInChanged() { if (reqall.signedIn && root.opened) reqall.loadProjects(false) }
+    function onCredentialKeyChanged() { if (reqall.signedIn && root.opened) reqall.loadProjects(false) }
   }
 
   function updatedText() {

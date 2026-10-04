@@ -92,6 +92,13 @@ test("rankProjects respects the limit and tolerates junk input", () => {
   assert.deepEqual(Model.rankProjects([null, { id: 1 }], "", "", [], 5), [])
 })
 
+test("findProject and findProjectById", () => {
+  assert.equal(Model.findProject(projects, "acme/notes").id, 8)
+  assert.equal(Model.findProjectById(projects, 8).name, "acme/notes")
+  assert.equal(Model.findProjectById(projects, 999), null)
+  assert.equal(Model.findProjectById(null, 1), null)
+})
+
 test("parse helpers fall back on bad input", () => {
   assert.equal(Model.parseProjects("").auth, "error")
   assert.equal(Model.parseProjects("{not json").auth, "error")

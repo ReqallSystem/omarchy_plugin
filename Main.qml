@@ -122,11 +122,24 @@ Item {
   readonly property var usedProjects: projectsDoc ? projectsDoc.used : []
   readonly property string projectsMessage: projectsDoc && projectsDoc.auth !== "ok" ? String(projectsDoc.message || "Could not load projects") : ""
 
+  // A project list belongs to the credentials that fetched it. Another key,
+  // server, or key source can be another account, so a change drops the
+  // cached list (and with it the form's selection) instead of letting it
+  // live out its ten minutes.
+  readonly property string credentialKey: JSON.stringify([
+    String(setting("apiKey", "")), String(setting("serverUrl", "")), url, source])
+  property string projectsCredentialKey: ""
+  property string loadingCredentialKey: ""
+
+  onCredentialKeyChanged: if (projectsDoc && projectsCredentialKey !== credentialKey) projectsDoc = null
+
   function loadProjects(force) {
     if (projectsProcess.running) return
-    var fresh = projectsDoc && projectsDoc.auth === "ok" && Date.now() - projectsFetchedAtMs < 10 * 60 * 1000
+    var fresh = projectsDoc && projectsDoc.auth === "ok" && projectsCredentialKey === credentialKey
+      && Date.now() - projectsFetchedAtMs < 10 * 60 * 1000
     if (fresh && !force) return
     projectsLoading = true
+    loadingCredentialKey = credentialKey
     projectsProcess.environment = credentialEnv()
     projectsProcess.running = true
   }
@@ -139,8 +152,9 @@ Item {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        root.projectsDoc = Model.parseProjects(text)
+        root.projectsCredentialKey = root.loadingCredentialKey
         root.projectsFetchedAtMs = Date.now()
+        root.projectsDoc = Model.parseProjects(text)
       }
     }
 

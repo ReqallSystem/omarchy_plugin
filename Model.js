@@ -232,6 +232,12 @@ function findProject(projects, name) {
   return null
 }
 
+function findProjectById(projects, id) {
+  var list = Array.isArray(projects) ? projects : []
+  for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === id) return list[i]
+  return null
+}
+
 // Second line under a picker row: tag, record count, last activity.
 function projectDetail(row, nowMs) {
   if (!row) return ""
