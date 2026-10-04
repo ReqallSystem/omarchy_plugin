@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Lists every Reqall project the widget's key can see, for the Remember
+# form's project picker, and prints it as one JSON document on stdout. The
+# panel runs this when it opens, not on the refresh timer: the list is long
+# and changes rarely.
+#
+# Output shape:
+#   { "auth": "ok"|"none"|"invalid"|"paused"|"error", "message": "...",
+#     "fetchedAt": "...",
+#     "projects": [ { id, name, records, activeAt }, ... ],
+#     "used": [ "name", ... ] }
+#
+# activeAt is the later of the project's updated_at (bumped whenever an agent
+# session resolves the project) and its newest record among the latest
+# records account-wide, so "recent" means recent activity from any client.
+# used is the projects remembered into from the panel, most recent first.
+#
+# Exit status is always 0; failures are in "auth" and "message".
+
+set -o pipefail
+
+# shellcheck source=reqall-widget-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/reqall-widget-lib.sh"
+
+emit() {
+  # emit <auth> <message>
+  jq -nc --arg auth "$1" --arg message "$2" \
+    '{auth: $auth, message: $message, fetchedAt: (now | todate), projects: [], used: []}'
+}
+
+missing=$(require_tools) || { emit error "$missing is not installed"; exit 0; }
+
+if [[ -z $key ]]; then
+  emit none "No Reqall credentials found"
+  exit 0
+fi
+
+fail_from_status() {
+  local last_error
+  last_error=$(mcp_error)
+  emit "$(auth_for_status "$1")" "${last_error:-Could not load projects}"
+  exit 0
+}
+
+# list_projects pages at 100. Fetch the first page to learn the total, then the
+# rest; 20 pages is far past any real account and stops a runaway loop.
+page_size=100
+pages=()
+first=$(mcp list_projects "{\"limit\": $page_size, \"offset\": 0}") || fail_from_status $?
+pages+=("$first")
+total=$(jq -r '.data.total // 0' <<<"$first")
+for (( offset = page_size; offset < total && offset < 20 * page_size; offset += page_size )); do
+  page=$(mcp list_projects "{\"limit\": $page_size, \"offset\": $offset}") || fail_from_status $?
+  pages+=("$page")
+done
+
+latest=$(mcp list_records '{"limit": 50}') || fail_from_status $?
+
+used='[]'
+if [[ -r $USED_FILE ]]; then
+  used=$(jq -Rsc 'split("\n") | map(select(length > 0))' "$USED_FILE" 2>/dev/null) || used='[]'
+fi
+
+printf '%s\n' "${pages[@]}" | jq -sc --argjson latest "$latest" --argjson used "$used" '
+  ($latest.data.records // []
+    | group_by(.project_name)
+    | map({key: .[0].project_name, value: (map(.updated_at) | max)})
+    | from_entries) as $touched
+  | {auth: "ok", message: "", fetchedAt: (now | todate), used: $used,
+     projects: (map(.data.projects // []) | add // []
+       | map({id, name, records: (.record_count // 0),
+              activeAt: ([.updated_at, $touched[.name]] | map(select(. != null)) | max)}))}'

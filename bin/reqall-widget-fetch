@@ -4,11 +4,7 @@
 # document on stdout. The QML side never talks to the network itself; it runs
 # this script and reads the result, the same split omarchy.agents uses.
 #
-# Credentials, in order of precedence:
-#   REQALL_WIDGET_API_KEY   the widget's own apiKey setting
-#   REQALL_API_KEY          the environment of omarchy-shell
-#   ~/.config/reqall/env    the file the Reqall Claude plugin sources
-#   ~/.config/reqall/config.json   api_key or access_token stored by `reqall login`
+# Credentials are resolved by reqall-widget-lib.sh (see there for the order).
 #
 # Output shape:
 #   { "auth": "ok"|"none"|"invalid"|"paused"|"error", "url": "...", "cli": bool,
@@ -21,56 +17,11 @@
 
 set -o pipefail
 
-CONFIG_DIR="${REQALL_CONFIG_DIR:-$HOME/.config/reqall}"
-DEFAULT_URL="https://www.reqall.net"
-
 recent="${REQALL_WIDGET_RECENT:-6}"
 project="${REQALL_WIDGET_PROJECT:-}"
 
-url="${REQALL_WIDGET_URL:-}"
-key="${REQALL_WIDGET_API_KEY:-}"
-source_name=""
-
-unquote() {
-  local v="$1"
-  v="${v#\"}"; v="${v%\"}"
-  v="${v#\'}"; v="${v%\'}"
-  printf '%s' "$v"
-}
-
-# The env file is a list of `export NAME=value` lines. Parse it rather than
-# sourcing it: the shell process should never execute text from a config file.
-file_key=""
-file_url=""
-if [[ -r "$CONFIG_DIR/env" ]]; then
-  while IFS= read -r line || [[ -n $line ]]; do
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line#export }"
-    case $line in
-      REQALL_API_KEY=*) file_key=$(unquote "${line#REQALL_API_KEY=}") ;;
-      REQALL_API_URL=*) file_url=$(unquote "${line#REQALL_API_URL=}") ;;
-      REQALL_URL=*) file_url=$(unquote "${line#REQALL_URL=}") ;;
-    esac
-  done < "$CONFIG_DIR/env"
-fi
-
-if [[ -n $key ]]; then
-  source_name="setting"
-elif [[ -n ${REQALL_API_KEY:-} ]]; then
-  key="$REQALL_API_KEY"; source_name="environment"
-elif [[ -n $file_key ]]; then
-  key="$file_key"; source_name="env-file"
-elif [[ -r "$CONFIG_DIR/config.json" ]] && command -v jq >/dev/null; then
-  key=$(jq -r '.api_key // .access_token // empty' "$CONFIG_DIR/config.json" 2>/dev/null)
-  [[ -n $key ]] && source_name="cli-login"
-fi
-
-[[ -n $url ]] || url="${REQALL_API_URL:-${REQALL_URL:-$file_url}}"
-[[ -n $url ]] || url="$DEFAULT_URL"
-url="${url%/}"
-
-has_cli=false
-command -v reqall >/dev/null 2>&1 && has_cli=true
+# shellcheck source=reqall-widget-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/reqall-widget-lib.sh"
 
 emit() {
   # emit <auth> <message>
@@ -80,55 +31,16 @@ emit() {
       fetchedAt: (now | todate), counts: null, recent: []}'
 }
 
-for tool in curl jq; do
-  command -v "$tool" >/dev/null 2>&1 || { emit error "$tool is not installed"; exit 0; }
-done
+missing=$(require_tools) || { emit error "$missing is not installed"; exit 0; }
 
 if [[ -z $key ]]; then
   emit none "No Reqall credentials found"
   exit 0
 fi
 
-# mcp <tool> <arguments-json>  -> prints structuredContent JSON, or returns:
-#   2 on transport/server failure, 3 on 401, 4 on 403.
-# mcp runs inside command substitutions, so the failure message travels through
-# a temp file rather than a variable.
-err_file=$(mktemp)
-trap 'rm -f "$err_file"' EXIT
-set_error() { printf '%s' "$1" > "$err_file"; }
-mcp() {
-  local body out code payload
-  body=$(jq -nc --arg n "$1" --argjson a "$2" \
-    '{jsonrpc: "2.0", id: 1, method: "tools/call", params: {name: $n, arguments: $a}}')
-  out=$(curl -sS --max-time 15 -w $'\n%{http_code}' -X POST "$url/mcp" \
-    -H "Authorization: Bearer $key" \
-    -H 'Content-Type: application/json' \
-    -H 'Accept: application/json, text/event-stream' \
-    -d "$body" 2>/dev/null) || { set_error "Could not reach $url"; return 2; }
-  code="${out##*$'\n'}"
-  payload="${out%$'\n'*}"
-  case $code in
-    200) ;;
-    401) set_error "$(jq -r '.message // "Unauthorized"' <<<"$payload" 2>/dev/null)"; return 3 ;;
-    403) set_error "$(jq -r '.message // "Forbidden"' <<<"$payload" 2>/dev/null)"; return 4 ;;
-    *) set_error "Server returned HTTP $code"; return 2 ;;
-  esac
-  # The endpoint answers as a server-sent event stream or as plain JSON.
-  if [[ $payload == event:* || $payload == data:* ]]; then
-    payload=$(sed -n 's/^data: //p' <<<"$payload" | head -n 1)
-  fi
-  local sc
-  sc=$(jq -c '.result.structuredContent // empty' <<<"$payload" 2>/dev/null)
-  if [[ -z $sc ]]; then
-    set_error "$(jq -r '.error.message // .result.content[0].text // "Unexpected response"' <<<"$payload" 2>/dev/null)"
-    return 2
-  fi
-  printf '%s' "$sc"
-}
-
 fail_from_status() {
   local last_error
-  last_error=$(<"$err_file")
+  last_error=$(mcp_error)
   case $1 in
     3) emit invalid "${last_error:-Invalid credentials}" ;;
     4) emit paused "${last_error:-Access denied}" ;;

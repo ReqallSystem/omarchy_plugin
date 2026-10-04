@@ -85,14 +85,38 @@ The panel refreshes on its own once a key is available. To update, run
 ## Panel
 
 - **Hero**: the Reqall mark, sign-in state, server, and total memory count.
+- **Actions**: open the dashboard, refresh, or sign in.
+- **Remember**: add a record without leaving the bar (see below).
 - **Usage**: memories, open todos, open issues, and projects.
 - **Recent memories**: the latest records with kind, project, status, and age.
-- **Actions**: open the dashboard, quick-add a memory (the `/app` entry
-  form), refresh, or sign in.
 
 Keyboard: `j`/`k` move, `h`/`l` switch buttons, `Enter` activates, `r`
-refreshes, `o` opens the dashboard, `a` opens quick add, `Esc` closes, `Tab`
-moves to the next panel. Middle-click the bar icon to refresh, right-click to open the dashboard.
+refreshes, `o` opens the dashboard, `a` or `/` jumps to the Remember form,
+`Esc` closes, `Tab` moves to the next panel. Middle-click the bar icon to
+refresh, right-click to open the dashboard.
+
+### Remember
+
+When you are signed in, the panel opens with the cursor in the Remember
+form's project search, so you can click the icon and start typing:
+
+1. **Project**: type any part of a project name; matching is fuzzy, so
+   `rqomp` finds `ReqallSystem/omarchy_plugin`. Before you type, the list
+   shows the `project` filter (tagged *current*), the projects you last
+   remembered into (*last used*), then the most recently active. `↑`/`↓`
+   pick, `Enter` or `Tab` confirms. The filter project, or else the last
+   used one, is preselected.
+2. **Title** (required) and **Body** (optional, multi-line).
+3. **Kind**: `auto` lets Reqall classify the record; or pick todo, issue,
+   spec, arch, info, test, or work (`h`/`l` with the row focused).
+4. **Remember** (`Ctrl+Enter` from any field). The title and body clear, the
+   project stays for the next one, and the record shows up under Recent
+   memories.
+
+In the form, `Tab`/`Shift+Tab` move between fields and `Esc` hands the keys
+back to the panel (a second `Esc` closes it). The project list loads when the
+panel opens and is cached for ten minutes; the last-used list lives in
+`~/.local/state/reqall-widget/used-projects`.
 
 ## Settings
 
@@ -112,18 +136,30 @@ IPC: `omarchy-shell reqall.memory toggle|open|close|refresh`.
 ## How it works
 
 - `Panel.qml` is the bar-widget entry point: the icon, the popup, and keyboard navigation.
-- `Main.qml` runs `bin/reqall-widget-fetch` on a timer and exposes the parsed result.
-- `bin/reqall-widget-fetch` resolves credentials, calls the Reqall MCP endpoint
-  (`POST /mcp`, `list_records` and `list_projects`) with `curl` and `jq`, and prints one JSON document.
-- `Model.js` holds pure helpers: relative times, kind glyphs, count formatting.
+- `Main.qml` runs `bin/reqall-widget-fetch` on a timer and exposes the parsed
+  result; it also runs the Remember form's two scripts.
+- `bin/reqall-widget-fetch` calls the Reqall MCP endpoint (`POST /mcp`,
+  `list_records` and `list_projects`) with `curl` and `jq` and prints one JSON document.
+- `bin/reqall-widget-projects` lists every project for the picker, with a
+  recent-activity time for each.
+- `bin/reqall-widget-remember` creates the record with `upsert_record`
+  (tagged `session_id: omarchy:reqall.memory`). The form's text reaches it
+  through environment variables, never through a shell command line.
+- `bin/reqall-widget-lib.sh` holds what the three share: credential lookup and the MCP call.
+- `Model.js` holds pure helpers: relative times, kind glyphs, count
+  formatting, and the picker's fuzzy matching and ordering.
 
 Only `curl`, `jq`, and `bash` are required, all of which Omarchy ships.
 
 ## Development
 
 ```bash
-# Run the fetch script directly
+# Run the fetch scripts directly
 ./bin/reqall-widget-fetch | jq .
+./bin/reqall-widget-projects | jq '.projects | length'
+
+# Unit tests for Model.js (fuzzy matching, ordering, parsing)
+node --test
 
 # Validate the manifest and entry points
 omarchy plugin validate .

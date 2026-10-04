@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "reqall.memory",
   "name": "Reqall",
-  "version": "2026.9.17",
+  "version": "2026.10.4",
   "author": "Reqall",
   "license": "MIT",
-  "description": "Your Reqall memory at a glance: recent records, open work, and account status in a native Omarchy bar panel.",
+  "description": "Your Reqall memory at a glance: recent records, open work, and account status in a native Omarchy bar panel, plus a Remember form to add a record.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {

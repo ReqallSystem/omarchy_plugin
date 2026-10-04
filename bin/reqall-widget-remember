@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# Creates one Reqall record from the panel's Remember form and prints the
+# outcome as one JSON document on stdout. The form passes its fields in the
+# environment so no text from it is ever parsed by a shell:
+#
+#   REQALL_WIDGET_REMEMBER_PROJECT_ID   numeric project id (required)
+#   REQALL_WIDGET_REMEMBER_PROJECT      project name, for the used-projects list
+#   REQALL_WIDGET_REMEMBER_TITLE        required, at most 500 characters
+#   REQALL_WIDGET_REMEMBER_BODY         optional, at most 32000 characters
+#   REQALL_WIDGET_REMEMBER_KIND         todo, issue, spec, arch, test, info,
+#                                       work, or empty to let Reqall classify
+#
+# Output shape:
+#   { "ok": true, "id": n, "kind": "...", "title": "...", "project": "..." }
+#   { "ok": false, "auth": "ok"|"none"|"invalid"|"paused"|"error", "message": "..." }
+#
+# On success the project moves to the top of the used-projects state file.
+# Exit status is always 0; failures are in "ok" and "message".
+
+set -o pipefail
+
+# shellcheck source=reqall-widget-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/reqall-widget-lib.sh"
+
+project_id="${REQALL_WIDGET_REMEMBER_PROJECT_ID:-}"
+project_name="${REQALL_WIDGET_REMEMBER_PROJECT:-}"
+title="${REQALL_WIDGET_REMEMBER_TITLE:-}"
+body="${REQALL_WIDGET_REMEMBER_BODY:-}"
+kind="${REQALL_WIDGET_REMEMBER_KIND:-}"
+
+fail() {
+  # fail <auth> <message>
+  jq -nc --arg auth "$1" --arg message "$2" '{ok: false, auth: $auth, message: $message}'
+  exit 0
+}
+
+missing=$(require_tools) || fail error "$missing is not installed"
+[[ -n $key ]] || fail none "No Reqall credentials found"
+
+[[ $project_id =~ ^[0-9]+$ ]] || fail ok "Pick a project"
+title="${title#"${title%%[![:space:]]*}"}"
+title="${title%"${title##*[![:space:]]}"}"
+[[ -n $title ]] || fail ok "Give it a title"
+(( ${#title} <= 500 )) || fail ok "Title is longer than 500 characters"
+(( ${#body} <= 32000 )) || fail ok "Body is longer than 32000 characters"
+case $kind in
+  ""|todo|issue|spec|arch|test|info|work) ;;
+  *) fail ok "Unknown kind: $kind" ;;
+esac
+
+args=$(jq -nc --argjson project_id "$project_id" --arg title "$title" \
+  --arg body "$body" --arg kind "$kind" \
+  '{project_id: $project_id, title: $title, session_id: "omarchy:reqall.memory"}
+   + (if $body != "" then {body: $body} else {} end)
+   + (if $kind != "" then {kind: $kind} else {} end)')
+
+result=$(mcp upsert_record "$args")
+status=$?
+if (( status != 0 )); then
+  last_error=$(mcp_error)
+  fail "$(auth_for_status "$status")" "${last_error:-Could not save}"
+fi
+
+record=$(jq -c '.data.record // empty' <<<"$result")
+if [[ -z $record ]]; then
+  fail error "$(jq -r '.error.message // .message // "Reqall did not return the new record"' <<<"$result")"
+fi
+
+if [[ -n $project_name ]] && mkdir -p "$STATE_DIR" 2>/dev/null; then
+  tmp="$USED_FILE.$$"
+  # Under pipefail, a missing file or a grep that drops every line must not
+  # fail the pipeline and skip the move.
+  { printf '%s\n' "$project_name"
+    if [[ -r $USED_FILE ]]; then grep -vxF -- "$project_name" "$USED_FILE" || true; fi
+  } | head -n 10 > "$tmp" && mv -f "$tmp" "$USED_FILE"
+  rm -f "$tmp"
+fi
+
+jq -nc --argjson record "$record" --arg project "$project_name" \
+  '{ok: true, id: $record.id, kind: ($record.kind // ""), title: ($record.title // ""), project: $project}'
